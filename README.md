@@ -1,40 +1,96 @@
-# chessmc
-MCTS based chess engine
+# ♟️ ChessMC – Neural MCTS-based Chess Engine
 
-Most chess engines use alpha-beta search algorithm, but chessmc uses Monte Carlo Tree Search (MCTS) algorithm.<br>
-In the past decade or so, MCTS really has been growing to be much more popular than alpha-beta.
+**ChessMC** là một công cụ chơi cờ vua sử dụng thuật toán **Monte Carlo Tree Search (MCTS)** được hướng dẫn bởi **mạng nơ-ron học sâu**, thay vì phương pháp alpha-beta truyền thống. Hệ thống được thiết kế theo tinh thần của **AlphaZero**, sử dụng deep learning để đánh giá vị trí bàn cờ thay vì các nước đi ngẫu nhiên.
 
-Chessmc should be similar to AlphaZero in the way that it does not use random rollouts.<br>
-Deep learning is used to evaluate board position. Neural net is trained to reproduce Stockfish’s evaluation function.<br>
-The output of the evaluation process is a value called the centipawn (cp). Centipawns correspond to  1/100th of a pawn and are the most commonly used  method when it comes to board evaluations.
+---
 
-Every board position has been labeled as Winning, Losing or Draw according to
-the cp Stockfish assigns to it. <br>
-A label of Winning has been assigned if cp > 1.5, Losing if it  was < −1.5 and Draw if the cp evaluation was between these 2 values.
+## 🧠 Mục tiêu
 
-## Data
-https://www.pgnmentor.com/files.html
+- Dự đoán nước đi hợp lý dựa trên cấu trúc bàn cờ.
+- Sử dụng mạng nơ-ron CNN hoặc Transformer để ước lượng:
+  - **Value** (giá trị lợi thế từ -1 đến +1)
+  - **Policy** (phân phối xác suất nước đi)
+  - **Class** (thắng/hòa/thua)
+- Tích hợp với thuật toán MCTS để nâng cao khả năng tìm kiếm nước đi.
 
-## Model
-Neural Network architecture: MLP -> input: 768 | hidden: 256 | hidden: 64 | output: 3<br>
-Leaky ReLU and Dropout 0.5 on both hidden layers<br>
-Optimizer: Adam (with default params)<br>
-Trained 100 epochs on 500_000 examples with 128 batch size<br>
-Train loss: 0.08<br>
-Test accuracy: 76%  
+---
 
-## Demo
-![chessmc](https://user-images.githubusercontent.com/54076398/123994421-a7b34980-d9cd-11eb-8ef9-7e2174e5c09f.png)
+## 📂 Dữ liệu
 
-## Dependencies
-```
-1. python-chess
-2. numpy
-3. pytorch
-```
+- Nguồn dữ liệu: [PGN Mentor Dataset](https://www.pgnmentor.com/files.html)
+- Dữ liệu từ các ván cờ `.pgn` được xử lý thành tensor đầu vào 18×8×8, bao gồm:
+  - 12 kênh quân cờ
+  - 1 kênh lượt chơi
+  - 4 kênh nhập thành
+  - 1 kênh en passant
 
-## Usage
-```
-1. python main.py  # runs web server on localhost:5000
-2. Web browse to localhost:5000
-```
+- Nhãn đầu ra:
+  - `value`: chuẩn hóa centipawn từ Stockfish
+  - `policy`: chỉ số nước đi (0–4095)
+  - `class`: kết quả ván cờ (0 thắng, 1 thua, 2 hòa)
+
+---
+
+## 🏗️ Kiến trúc mô hình
+
+### ✅ Improved CNN (Mặc định)
+- Input: 18 × 8 × 8
+- Residual blocks + Attention
+- Dual-head output:
+  - `value` ∈ [-1, 1]
+  - `policy` ∈ [0, 1]^4096
+  - `class` ∈ {0, 1, 2}
+
+### ✅ Transformer (Tùy chọn)
+- Mỗi ô cờ là một token
+- Positional encoding
+- Global pooling đầu ra
+
+### Loss:
+- CrossEntropy cho policy
+- MSE cho value
+- Có hỗ trợ label smoothing và FP16
+
+---
+
+## 🔍 MCTS nâng cao
+
+- Dùng `policy` để hướng dẫn mở rộng node
+- **Progressive widening**: giới hạn số node con
+- **Dirichlet noise**: tăng độ đa dạng cho root node
+- **Virtual loss**: hỗ trợ song song
+- Tích hợp mạng nơ-ron để đánh giá `value` và `policy` tại mỗi node
+
+---
+
+## 📊 Đánh giá
+
+- Sử dụng `checkstep.py` để so sánh nước đi AI với nước tốt nhất của **Stockfish** (ở độ sâu 15).
+- Tính toán **centipawn loss** cho từng nước đi.
+- Vẽ biểu đồ phân bố tổn thất để đánh giá "độ thông minh" của AI.
+
+---
+
+## 🌐 Demo giao diện web
+
+- Flask Web UI hỗ trợ:
+  - Reset ván cờ
+  - Người đấu AI
+  - Chế độ self-play
+- Bàn cờ hiển thị bằng **SVG base64**
+
+![demo](https://user-images.githubusercontent.com/54076398/123994421-a7b34980-d9cd-11eb-8ef9-7e2174e5c09f.png)
+
+---
+
+## ▶️ Hướng dẫn sử dụng
+
+```bash
+# Bước 1: Chuẩn bị dữ liệu
+python convert_pgn_to_npz.py  # Tạo file train.npz, val.npz
+
+# Bước 2: Huấn luyện mô hình
+python trainer.py  # Model được lưu trong thư mục /models
+
+# Bước 3: Khởi chạy giao diện web
+python main.py  # Truy cập http://localhost:5000
